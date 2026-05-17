@@ -1,0 +1,14 @@
+# ECHOWALL funding configuration
+# Enable funding links in repository Settings > General > Features > "Sponsorships".
+
+github: [Khawrzm]
+# patreon: 
+# open_collective: 
+# ko_fi: 
+# tidelift: 
+# community_bridge: 
+# liberapay: 
+# issuehunt: 
+# otechie: 
+# lfx_crowdfunding: 
+# custom: ["https://khawrizm.com/donate"]
