@@ -40,6 +40,10 @@ mypy echowall/
 3. Ensure `pytest` and `ruff` pass
 4. Open a PR with a clear description
 
+## Showcase Your Work
+
+Built something cool with ECHOWALL? Add it to [docs/SHOWCASE.md](docs/SHOWCASE.md)!
+
 ## Research Ethics
 
 ECHOWALL is designed for **safety and humanitarian applications**:
