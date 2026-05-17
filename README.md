@@ -199,8 +199,8 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md). Be kind. Cite your sources. Don't bre
 - **Discussions:** GitHub Discussions tab
 - **Issues:** bugs & feature requests
 - **Discord:** (coming soon)
-- **Email:** echowall@khawrizm.com
-
+- **Email:** cartier403c@gmail.com
+- 
 ---
 
 ## License
