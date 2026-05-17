@@ -88,8 +88,7 @@ We pay for working exploits that extract raw signal from a running ECHOWALL node
 - **High** (signal reconstruction beyond semantic output): $500
 - **Medium** (de-anonymization of federated updates): $250
 
-Email `security@khawrizm.com` with PGP key on request. Please do not disclose publicly until we ship a patch.
-
+Email `cartier403c@gmail.com` with PGP key on request. Please do not disclose publicly until we ship a patch.
 ---
 
 ## Auditing
