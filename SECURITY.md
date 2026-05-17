@@ -11,8 +11,7 @@
 
 **Please do not open a public issue.**
 
-Email: `security@khawrizm.com`
-
+Email: `cartier403c@gmail.com`
 Include:
 - A description of the issue
 - Steps to reproduce (ideally a minimal PoC)
