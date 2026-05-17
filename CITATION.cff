@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use ECHOWALL in academic work, please cite it as below."
+type: software
+title: "ECHOWALL: Open-source Wi-Fi CSI and Acoustic Fusion Radar"
+abstract: >
+  ECHOWALL is an open-source passive radar system that fuses Wi-Fi Channel
+  State Information (CSI) with ultrasonic FMCW chirps to detect human
+  presence, occupancy, posture and vital signs through walls, using only
+  commodity hardware (ESP32-S3, Raspberry Pi, consumer Wi-Fi chipsets).
+authors:
+  - family-names: Alshammari
+    given-names: Sulaiman
+    alias: Khawrzm
+    affiliation: KHAWRIZM
+repository-code: "https://github.com/Khawrzm/echowall"
+url: "https://github.com/Khawrzm/echowall"
+license: Apache-2.0
+version: 0.1.0
+date-released: 2026-05-17
+keywords:
+  - wifi-csi
+  - passive-radar
+  - acoustic-sensing
+  - edge-ai
+  - human-detection
+  - through-wall-sensing
+  - federated-learning
+  - privacy-preserving
