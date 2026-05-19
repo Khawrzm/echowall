@@ -11,6 +11,11 @@ bitflags = { workspace = true }
 phalanx_gate = { path = "../phalanx_gate" }
 sensory_lobe = { path = "../sensory_lobe" }
 
+[build-dependencies]
+# cc crate: compiles C11 Casper Engine sources and links libcasper.a
+# at `cargo build` time. No pre-built library required.
+cc = { version = "1", features = [] }
+
 [features]
 default = []
 
@@ -19,8 +24,3 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
-
-# Note: cognitive_lobe uses FFI to the C11 Casper Engine.
-# Build requires: libcasper.a compiled from casper_engine/ with -std=c11 -O2
-# Link with: cargo:rustc-link-lib=static=casper
-# See casper_engine/README.md for build instructions.
