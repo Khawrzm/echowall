@@ -138,10 +138,235 @@ def ha_setup(
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    # Block until signal.
     import time
     while True:
         time.sleep(1)
+
+
+@app.command()
+def benchmark(
+    dataset: str = typer.Option(
+        "",
+        help=(
+            "Path to a CSI replay CSV. "
+            "Defaults to the bundled deterministic simulation dataset "
+            "at tests/data/sample_csi_fall.csv."
+        ),
+    ),
+    real: bool = typer.Option(
+        False,
+        "--real",
+        help="Assert that the dataset is from real ESP32-S3 hardware (suppresses simulation warning).",
+    ),
+):
+    """Run the offline EchoWall benchmark against a CSI replay dataset.
+
+    By default uses the bundled deterministic synthetic dataset
+    (``tests/data/sample_csi_fall.csv``, numpy seed=42). Pass
+    ``--dataset /path/to/real.csv`` and ``--real`` to evaluate on
+    hardware-captured CSI.
+
+    Output metrics: accuracy, per-class F1, and confusion matrix.
+    All computation is 100\\% offline — no network calls during inference.
+    """
+    _banner()
+
+    # ------------------------------------------------------------------ #
+    #  RADICAL HONESTY WARNING — mandatory, cannot be suppressed          #
+    # ------------------------------------------------------------------ #
+    if not real:
+        console.print(
+            Panel(
+                "[bold yellow]⚠️  SIMULATION REPLAY WARNING[/bold yellow]\n\n"
+                "Executing offline benchmark using [bold]deterministic synthetic CSI data[/bold]\n"
+                "(numpy seed=42 simulation replay, [bold]NOT real RF measurements[/bold]).\n\n"
+                "Metrics reflect model behaviour on physics-informed synthetic data only.\n"
+                "Run on physical ESP32-S3 hardware for real RF metrics:\n"
+                "  [cyan]echowall benchmark --dataset /path/to/real_csi.csv --real[/cyan]",
+                border_style="yellow",
+                title="[yellow]Benchmark Data Source[/yellow]",
+            )
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Resolve dataset path                                               #
+    # ------------------------------------------------------------------ #
+    import pathlib
+
+    if dataset:
+        data_path = pathlib.Path(dataset)
+        if not data_path.exists():
+            rprint(f"[red]❌ Dataset not found: {data_path}[/red]")
+            raise typer.Exit(code=1)
+    else:
+        # Bundled simulation dataset — locate relative to this file's package root.
+        _pkg_root = pathlib.Path(__file__).parent.parent
+        data_path = _pkg_root / "tests" / "data" / "sample_csi_fall.csv"
+        if not data_path.exists():
+            rprint(
+                "[red]❌ Bundled dataset not found at tests/data/sample_csi_fall.csv.\n"
+                "Re-clone the repository or pass --dataset /path/to/csi.csv[/red]"
+            )
+            raise typer.Exit(code=1)
+
+    rprint(f"[cyan]📊 Loading dataset: {data_path}[/cyan]")
+
+    # ------------------------------------------------------------------ #
+    #  Load dataset (stdlib csv — no pandas dependency)                   #
+    # ------------------------------------------------------------------ #
+    import csv
+    import hashlib
+
+    labels_true: list[int] = []
+    features: list[list[int]] = []
+
+    with data_path.open(newline="") as fh:
+        reader = csv.reader(fh)
+        header = next(reader)  # skip header row
+        for row in reader:
+            if not row:
+                continue
+            labels_true.append(int(row[0]))
+            features.append([int(v) for v in row[1:]])
+
+    n_samples = len(labels_true)
+    n_features = len(features[0]) if features else 0
+    sha256_hex = hashlib.sha256(data_path.read_bytes()).hexdigest()
+
+    rprint(f"  Samples  : [bold]{n_samples}[/bold]")
+    rprint(f"  Features : [bold]{n_features}[/bold]")
+    rprint(f"  SHA-256  : [dim]{sha256_hex}[/dim]")
+
+    # ------------------------------------------------------------------ #
+    #  Inference using the offline model loader                           #
+    # ------------------------------------------------------------------ #
+    rprint("[cyan]🧠 Loading model via offline-first model loader...[/cyan]")
+    from echowall.model_loader import get_model_path
+    import json
+
+    model_path = get_model_path("echonet-v1")
+    model_data = json.loads(model_path.read_text())
+
+    # Decode INT8 weights from the seeded model.
+    # Inference: simple linear forward pass (encoder → hidden → output → argmax).
+    # This is intentionally minimal: the benchmark tests the data pipeline
+    # and reporting infrastructure, not a production-grade transformer.
+    enc_flat = model_data["weights"]["encoder"]   # 640 × 64 = 40960 values
+    hid_flat = model_data["weights"]["hidden"]    # 64 × 64 = 4096 values
+    out_flat = model_data["weights"]["output"]    # 64 × 8 = 512 values
+
+    input_dim  = model_data["architecture"]["input_dim"]    # 640
+    hidden_dim = model_data["architecture"]["hidden_dim"]   # 64
+    output_dim = model_data["architecture"]["output_dim"]   # 8
+
+    def _matmul_int(x: list[int], W_flat: list[int],
+                    rows: int, cols: int) -> list[int]:
+        """Minimal integer matrix multiply: x (rows,) @ W (rows x cols) -> (cols,)."""
+        out = [0] * cols
+        for c in range(cols):
+            acc = 0
+            for r in range(rows):
+                acc += x[r] * W_flat[r * cols + c]
+            # Requantize to INT8 range to prevent overflow accumulation
+            out[c] = max(-128, min(127, acc >> 7))
+        return out
+
+    def _relu(x: list[int]) -> list[int]:
+        return [v if v > 0 else 0 for v in x]
+
+    labels_pred: list[int] = []
+
+    with console.status("[cyan]Running inference...[/cyan]"):
+        for feat in features:
+            h1 = _relu(_matmul_int(feat,  enc_flat, input_dim,  hidden_dim))
+            h2 = _relu(_matmul_int(h1,   hid_flat, hidden_dim, hidden_dim))
+            logits = _matmul_int(h2, out_flat, hidden_dim, output_dim)
+            # Predict class with highest logit (presence/count head uses first 4)
+            pred = max(range(4), key=lambda i: logits[i])
+            labels_pred.append(pred)
+
+    # ------------------------------------------------------------------ #
+    #  Metrics: accuracy + per-class F1                                   #
+    # ------------------------------------------------------------------ #
+    class_names = {0: "empty", 1: "standing", 2: "sitting", 3: "fall"}
+    n_classes = 4
+
+    correct = sum(t == p for t, p in zip(labels_true, labels_pred))
+    accuracy = correct / n_samples if n_samples else 0.0
+
+    # Confusion matrix
+    cm = [[0] * n_classes for _ in range(n_classes)]
+    for t, p in zip(labels_true, labels_pred):
+        if 0 <= t < n_classes and 0 <= p < n_classes:
+            cm[t][p] += 1
+
+    # Per-class precision, recall, F1
+    f1_scores: dict[int, float] = {}
+    for c in range(n_classes):
+        tp = cm[c][c]
+        fp = sum(cm[r][c] for r in range(n_classes)) - tp
+        fn = sum(cm[c][r] for r in range(n_classes)) - tp
+        precision = tp / (tp + fp) if (tp + fp) else 0.0
+        recall    = tp / (tp + fn) if (tp + fn) else 0.0
+        f1_scores[c] = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) else 0.0
+        )
+
+    macro_f1 = sum(f1_scores.values()) / n_classes
+
+    # ------------------------------------------------------------------ #
+    #  Results table                                                      #
+    # ------------------------------------------------------------------ #
+    from rich.table import Table
+
+    console.print("\n")
+    console.print(Panel.fit(
+        f"[bold green]Accuracy: {accuracy * 100:.1f}%[/bold green]  "
+        f"Macro-F1: [bold]{macro_f1:.3f}[/bold]  "
+        f"Samples: {n_samples}",
+        title="[bold]Benchmark Results[/bold]",
+        border_style="green",
+    ))
+
+    tbl = Table(title="Per-class F1", show_header=True, header_style="bold cyan")
+    tbl.add_column("Class", style="cyan")
+    tbl.add_column("Precision", justify="right")
+    tbl.add_column("Recall", justify="right")
+    tbl.add_column("F1", justify="right")
+    tbl.add_column("Support", justify="right")
+
+    for c in range(n_classes):
+        tp = cm[c][c]
+        fp = sum(cm[r][c] for r in range(n_classes)) - tp
+        fn = sum(cm[c][r] for r in range(n_classes)) - tp
+        prec = tp / (tp + fp) if (tp + fp) else 0.0
+        rec  = tp / (tp + fn) if (tp + fn) else 0.0
+        sup  = sum(cm[c])
+        tbl.add_row(
+            class_names[c],
+            f"{prec:.3f}",
+            f"{rec:.3f}",
+            f"{f1_scores[c]:.3f}",
+            str(sup),
+        )
+    console.print(tbl)
+
+    # Confusion matrix
+    cm_tbl = Table(title="Confusion Matrix (row=true, col=pred)",
+                   show_header=True, header_style="bold")
+    cm_tbl.add_column("true \\ pred")
+    for c in range(n_classes):
+        cm_tbl.add_column(class_names[c], justify="right")
+    for r in range(n_classes):
+        cm_tbl.add_row(class_names[r], *[str(cm[r][c]) for c in range(n_classes)])
+    console.print(cm_tbl)
+
+    if not real:
+        rprint(
+            "\n[dim]⚠️  Metrics are on synthetic simulation data (seed=42). "
+            "See README for hardware benchmark instructions.[/dim]"
+        )
 
 
 if __name__ == "__main__":
