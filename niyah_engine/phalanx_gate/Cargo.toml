@@ -1,0 +1,19 @@
+[package]
+name = "phalanx_gate"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+heapless = { workspace = true }
+bitflags = { workspace = true }
+
+[features]
+default = []
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
