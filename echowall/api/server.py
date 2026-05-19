@@ -1,4 +1,4 @@
-"""ECHOWALL REST + WebSocket API."""
+"""ECHOWALL REST + WebSocket + HA-polling API."""
 
 from __future__ import annotations
 from fastapi import FastAPI, WebSocket
@@ -43,6 +43,41 @@ def build_app(pipeline=None) -> FastAPI:
             "confidence": round(result.confidence, 3),
             "timestamp": result.timestamp,
         }
+
+    @app.get("/ha-discovery")
+    async def ha_discovery():
+        """Home Assistant fallback polling endpoint.
+
+        For HA setups without a local MQTT broker — HA can poll this endpoint
+        using a REST sensor and get the full discovery payload in one call.
+        No MQTT required in this mode.
+        """
+        result = pipeline.get_result() if pipeline else None
+        base = {
+            "device": {
+                "identifiers": ["echowall_node1"],
+                "name": "EchoWall",
+                "model": "EchoWall v0.1",
+                "manufacturer": "echowall-oss",
+            },
+            "entities": {
+                "presence": False,
+                "count": 0,
+                "posture": "unknown",
+                "confidence": 0.0,
+            },
+        }
+        if result:
+            base["entities"] = {
+                "presence": result.presence,
+                "count": result.count,
+                "posture": result.posture,
+                "confidence": round(result.confidence, 3),
+                "breathing_rate": getattr(result, "breathing_rate", None),
+                "heart_rate": getattr(result, "heart_rate", None),
+                "timestamp": result.timestamp,
+            }
+        return JSONResponse(base)
 
     @app.websocket("/ws")
     async def ws_stream(websocket: WebSocket):
