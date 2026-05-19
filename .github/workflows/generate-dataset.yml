@@ -1,9 +1,6 @@
 name: Generate Synthetic CSI Dataset (HITL)
 
-# Trigger: manual only from Actions UI (mobile-friendly).
-# NEVER triggers automatically on push.
-# The workflow CANNOT push to main directly.
-# A human must review and merge the resulting PR.
+# Trigger: manual only. NEVER auto-runs. Cannot push to main directly.
 on:
   workflow_dispatch:
     inputs:
@@ -12,9 +9,14 @@ on:
         required: false
         default: '42'
       n_per_class:
-        description: 'Samples per class (4 classes; total = 4x this value)'
+        description: 'Samples per class (4 classes; total = 4x this)'
         required: false
         default: '50'
+
+env:
+  # Resolve defaults once at job level — avoids empty-string argparse crashes
+  SEED: ${{ inputs.seed || '42' }}
+  N_PER_CLASS: ${{ inputs.n_per_class || '50' }}
 
 jobs:
   generate-and-pr:
@@ -39,53 +41,61 @@ jobs:
         run: pip install "numpy==1.26.4" --quiet
 
       - name: Generate deterministic synthetic CSI dataset
-        run: |
-          python scripts/generate_csi_dataset.py \
-            --seed ${{ inputs.seed || '42' }} \
-            --n-per-class ${{ inputs.n_per_class || '50' }}
+        # Pass via env vars — no shell quoting issues
+        run: python scripts/generate_csi_dataset.py --seed "$SEED" --n-per-class "$N_PER_CLASS"
 
-      - name: Commit to data branch
+      - name: Commit to unique data branch
         id: commit
         run: |
-          SEED="${{ inputs.seed || '42' }}"
-          BRANCH="data/synthetic-csi-seed-${SEED}"
+          # Append run_id to guarantee a fresh branch even if a prior run
+          # partially pushed before failing (eliminates branch-already-exists error)
+          BRANCH="data/synthetic-csi-seed-${SEED}-run-${{ github.run_id }}"
           echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
 
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -b "${BRANCH}"
+
+          # Stage only if files actually changed (avoids "nothing to commit" exit 1)
           git add tests/data/sample_csi_fall.csv tests/data/sample_csi_fall.meta.json
-          git commit -m "chore(data): auto-generate full synthetic CSI dataset via CI (seed=${{ inputs.seed || '42' }})"
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit (dataset unchanged). Exiting cleanly."
+            echo "branch=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git commit -m "chore(data): auto-generate full synthetic CSI dataset via CI (seed=${SEED})"
           git push origin "${BRANCH}"
 
       - name: Open Pull Request against main
+        if: steps.commit.outputs.branch != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.commit.outputs.branch }}
         run: |
-          BRANCH="${{ steps.commit.outputs.branch }}"
-          TOTAL=$(python -c "print(4 * int('${{ inputs.n_per_class || '50' }}'))")
+          TOTAL=$(python -c "print(4 * int('$N_PER_CLASS'))")
 
           gh pr create \
             --base main \
-            --head "${BRANCH}" \
-            --title "chore(data): full synthetic CSI dataset (seed=${{ inputs.seed || '42' }})" \
-            --body "## Synthetic CSI Dataset - HITL Merge Required
+            --head "$BRANCH" \
+            --title "chore(data): full synthetic CSI dataset (seed=${SEED})" \
+            --body "$(printf '%s' "## Synthetic CSI Dataset - HITL Merge Required
 
-          This PR was opened automatically by **generate-dataset.yml**.
-          A human must review and merge it - the workflow has no write access to main.
+This PR was opened automatically by generate-dataset.yml.
+A human must review and merge it - the workflow cannot push to main directly.
 
-          | Property | Value |
-          |---|---|
-          | Seed | ${{ inputs.seed || '42' }} |
-          | Samples per class | ${{ inputs.n_per_class || '50' }} |
-          | Total rows | ${TOTAL} |
-          | Features | 640 (64 subcarriers x 10 frames) |
-          | Quantization | INT8 |
-          | Classes | 0=empty 1=standing 2=sitting 3=fall |
+| Property | Value |
+|---|---|
+| Seed | ${SEED} |
+| Samples per class | ${N_PER_CLASS} |
+| Total rows | ${TOTAL} |
+| Features | 640 (64 subcarriers x 10 frames) |
+| Quantization | INT8 |
+| Classes | 0=empty 1=standing 2=sitting 3=fall |
 
-          SHA-256 recorded in tests/data/sample_csi_fall.meta.json.
+SHA-256 recorded in tests/data/sample_csi_fall.meta.json.
 
-          WARNING: This is deterministic synthetic simulation data (seed=${{ inputs.seed || '42' }}).
-          It is NOT real RF measurements. Run echowall benchmark --real with
-          hardware-captured CSI for production accuracy metrics."
+WARNING: Deterministic synthetic simulation data (seed=${SEED}).
+NOT real RF measurements. Run echowall benchmark --real for production metrics.")"
