@@ -1,1 +1,1 @@
-"""EchoWall third-party integrations — all opt-in, all local, no cloud."""
+"""EchoWall integrations — plug-and-play connectors for smart home platforms."""

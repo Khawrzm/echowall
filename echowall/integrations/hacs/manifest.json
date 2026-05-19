@@ -1,0 +1,12 @@
+{
+  "domain": "echowall",
+  "name": "EchoWall",
+  "version": "0.1.0",
+  "documentation": "https://github.com/Khawrzm/echowall",
+  "issue_tracker": "https://github.com/Khawrzm/echowall/issues",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": ["@Khawrzm"],
+  "iot_class": "local_polling",
+  "config_flow": true
+}
