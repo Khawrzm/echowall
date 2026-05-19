@@ -1,0 +1,16 @@
+{
+  "dataset": "sample_csi_fall",
+  "seed": 42,
+  "rows": 200,
+  "features": 640,
+  "classes": {
+    "0": "empty",
+    "1": "standing",
+    "2": "sitting",
+    "3": "fall"
+  },
+  "quantization": "INT8",
+  "sha256": "19d0502ecc441cce0cf7d1f93e8ac0df7c6420c62896088537eb138e338e9f86",
+  "generated_by": "generate-dataset.yml",
+  "note": "Deterministic synthetic simulation data. NOT real RF measurements."
+}
