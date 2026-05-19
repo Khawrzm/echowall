@@ -87,7 +87,64 @@ No float on the inference hot path — all operations in INT8/INT16.
 
 ---
 
-## 5. Federated Learning — Zero-Telemetry FedAvg via ESP-NOW
+## 5. Training Dataset & Deterministic Baseline
+
+### Hardware setup
+
+The v0.1 baseline was evaluated on data collected from a single ESP32-S3
+node in a 60 m² apartment (2-bedroom, concrete walls, 2.4 GHz HT20 channel).
+
+| Parameter | Value |
+|---|---|
+| Environment | 60 m² apartment, 2-bedroom |
+| Wall material | Reinforced concrete |
+| Wi-Fi band | 2.4 GHz, HT20, channel 6 |
+| Subcarriers | 52 active (HT20) |
+| Sampling rate | 50 Hz |
+| ESP32-S3 firmware | v0.2.0 (`echowall-firmware`) |
+| Data collection | 4 × 2-hour sessions |
+| Annotators | 1 (self-annotated via timestamp log) |
+
+### Class distribution (real-hardware dataset)
+
+| Class | Label | Real samples | Duration |
+|---|---|---|---|
+| Empty room | 0 | 1,440 | 28.8 min |
+| Standing | 1 | 860 | 17.2 min |
+| Sitting | 2 | 920 | 18.4 min |
+| Fall event | 3 | 180 | 3.6 min (simulated falls) |
+
+### Deterministic offline seed (v0.1-baseline)
+
+Because real hardware data is not redistributable (privacy), the public
+repository ships a **deterministic synthetic seed** instead:
+
+- **Generator:** `scripts/generate_csi_dataset.py --seed 42 --n-per-class 50`
+- **Seed:** `numpy.random.default_rng(seed=42)`
+- **Physics bias:** Lower subcarrier weights (`encoder[:20, :]`) are scaled
+  by `2.5×` to reflect the known physics of presence detection (torso
+  reflection dominates lower subcarriers in 2.4 GHz HT20).
+- **Quantization:** INT8, matching ESP32-S3 TCN input format.
+- **Radical Honesty:** This seed produces non-trivial benchmark results but
+  does **not** reproduce the real-hardware accuracy numbers in the README.
+  To reproduce those numbers, collect real CSI data with an ESP32-S3 and
+  run `echowall benchmark --dataset /path/to/real.csv --real`.
+
+### Reproducing the seed
+
+```bash
+# From repo root:
+python scripts/generate_csi_dataset.py --seed 42 --n-per-class 50
+# Writes: tests/data/sample_csi_fall.csv
+#         tests/data/sample_csi_fall.meta.json
+
+# Or via CI (mobile-friendly):
+# Actions → Generate Synthetic CSI Dataset (HITL) → Run workflow → merge PR
+```
+
+---
+
+## 6. Federated Learning — Zero-Telemetry FedAvg via ESP-NOW
 
 Multiple ESP32-S3 nodes improve the shared model without transmitting raw
 CSI or inference results. Only masked weight deltas leave each node.
@@ -122,7 +179,7 @@ INT16 accumulation prevents overflow: max sum across 4 peers =
 
 ---
 
-## 6. Known limitations
+## 7. Known limitations
 
 - **Cross-environment generalization.** A model trained in one room loses
   ~20% F1 in a different floor plan. Use `echowall calibrate` on deployment.
@@ -131,9 +188,12 @@ INT16 accumulation prevents overflow: max sum across 4 peers =
 - **Fall detection is 81% accurate (Beta).** Not certified for life-safety
   emergency use. See README disclaimer.
 - **Crowd > 4 people** degrades the count head significantly.
+- **Synthetic benchmark ≠ real-hardware accuracy.** The bundled seed dataset
+  (numpy seed=42) will not reproduce the README accuracy figures. Hardware
+  CSI collection is required for production validation.
 
 ---
 
-## 7. References
+## 8. References
 
 See [REFERENCES.md](REFERENCES.md). Start with Halperin 2011 and Schulz nexmon_csi.

@@ -28,7 +28,7 @@ def _banner():
 def run(
     mode: str = typer.Option("auto", help="Sensor mode: rpi | esp32 | sim | auto"),
     simulate: bool = typer.Option(False, "--simulate", help="Run in simulation mode"),
-    scene: str = typer.Option("empty", help="Simulation scene: empty | living_room | office"),
+    scene: str = typer.Option("empty", help="Simulation scene: empty | living_room | office | apartment_2br"),
     host: str = typer.Option("0.0.0.0", help="API server host"),
     port: int = typer.Option(8765, help="API server port"),
 ):
@@ -71,6 +71,89 @@ def calibrate(
     from echowall.core.calibration import run_calibration
     run_calibration(duration=duration)
     rprint("[green]✅ Calibration complete. Baseline saved.[/green]")
+
+
+@app.command(name="download-weights")
+def download_weights(
+    model: str = typer.Option(
+        "echonet-v1",
+        help="Model name to download. Currently only 'echonet-v1' is available.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Force re-download even if the model is already cached.",
+    ),
+):
+    """Download (or seed offline) the EchoNet model weights.
+
+    On first run, attempts to fetch the checkpoint from GitHub Releases.
+    If the network is unavailable, falls back to a physics-informed local
+    seed (deterministic, numpy seed=42) that produces non-trivial results
+    immediately — no internet required.
+
+    The model is cached at ``~/.echowall/models/`` and integrity-verified
+    via SHA-256 on every subsequent load.  100% offline after first run.
+
+    Example::
+
+        echowall download-weights
+        echowall download-weights --model echonet-v1 --force
+    """
+    _banner()
+    from echowall.model_loader import get_model_path, _CACHE_DIR
+    from pathlib import Path
+    import json
+
+    dest = _CACHE_DIR / f"{model}.json"
+
+    if force and dest.exists():
+        rprint(f"[yellow]🗑  Force flag set — removing cached model at {dest}[/yellow]")
+        dest.unlink(missing_ok=True)
+        meta = dest.with_suffix(".meta.json")
+        meta.unlink(missing_ok=True)
+
+    rprint(f"[cyan]🔽 Fetching model: [bold]{model}[/bold][/cyan]")
+    rprint(f"[dim]   Cache location : {_CACHE_DIR}[/dim]")
+    rprint("[dim]   Strategy       : GitHub Releases → local seed fallback[/dim]")
+    rprint("[dim]   Privacy        : Zero network calls after first run[/dim]")
+
+    try:
+        path = get_model_path(model)
+    except KeyError as exc:
+        rprint(f"[red]❌ Unknown model: {exc}[/red]")
+        raise typer.Exit(code=1)
+
+    # Read sidecar meta for reporting
+    meta_path = path.with_suffix(".meta.json")
+    source = "unknown"
+    sha256 = "—"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            source = meta.get("source_url", "local-seed")
+            sha256 = meta.get("sha256", "—")[:16] + "…"
+        except Exception:
+            pass
+
+    seeded = source == "local-seed"
+
+    console.print(
+        Panel(
+            f"[bold green]✅ Model ready: {model}[/bold green]\n\n"
+            f"  Path   : {path}\n"
+            f"  Source : {'[yellow]Local offline seed (physics-informed, numpy seed=42)[/yellow]' if seeded else f'[cyan]{source}[/cyan]'}\n"
+            f"  SHA-256: [dim]{sha256}[/dim]\n\n"
+            + (
+                "[yellow]⚠️  Using offline seed — not real trained weights.\n"
+                "   Run [cyan]echowall calibrate[/cyan] to adapt to your environment.[/yellow]"
+                if seeded else
+                "[green]✅ Verified GitHub Release checkpoint.[/green]"
+            ),
+            title="[bold]EchoNet Weights[/bold]",
+            border_style="green" if not seeded else "yellow",
+        )
+    )
 
 
 @app.command(name="ha-setup")
@@ -171,9 +254,6 @@ def benchmark(
     """
     _banner()
 
-    # ------------------------------------------------------------------ #
-    #  RADICAL HONESTY WARNING — mandatory, cannot be suppressed          #
-    # ------------------------------------------------------------------ #
     if not real:
         console.print(
             Panel(
@@ -188,9 +268,6 @@ def benchmark(
             )
         )
 
-    # ------------------------------------------------------------------ #
-    #  Resolve dataset path                                               #
-    # ------------------------------------------------------------------ #
     import pathlib
 
     if dataset:
@@ -199,7 +276,6 @@ def benchmark(
             rprint(f"[red]❌ Dataset not found: {data_path}[/red]")
             raise typer.Exit(code=1)
     else:
-        # Bundled simulation dataset — locate relative to this file's package root.
         _pkg_root = pathlib.Path(__file__).parent.parent
         data_path = _pkg_root / "tests" / "data" / "sample_csi_fall.csv"
         if not data_path.exists():
@@ -211,9 +287,6 @@ def benchmark(
 
     rprint(f"[cyan]📊 Loading dataset: {data_path}[/cyan]")
 
-    # ------------------------------------------------------------------ #
-    #  Load dataset (stdlib csv — no pandas dependency)                   #
-    # ------------------------------------------------------------------ #
     import csv
     import hashlib
 
@@ -222,7 +295,7 @@ def benchmark(
 
     with data_path.open(newline="") as fh:
         reader = csv.reader(fh)
-        header = next(reader)  # skip header row
+        next(reader)  # skip header row
         for row in reader:
             if not row:
                 continue
@@ -237,9 +310,6 @@ def benchmark(
     rprint(f"  Features : [bold]{n_features}[/bold]")
     rprint(f"  SHA-256  : [dim]{sha256_hex}[/dim]")
 
-    # ------------------------------------------------------------------ #
-    #  Inference using the offline model loader                           #
-    # ------------------------------------------------------------------ #
     rprint("[cyan]🧠 Loading model via offline-first model loader...[/cyan]")
     from echowall.model_loader import get_model_path
     import json
@@ -247,27 +317,21 @@ def benchmark(
     model_path = get_model_path("echonet-v1")
     model_data = json.loads(model_path.read_text())
 
-    # Decode INT8 weights from the seeded model.
-    # Inference: simple linear forward pass (encoder → hidden → output → argmax).
-    # This is intentionally minimal: the benchmark tests the data pipeline
-    # and reporting infrastructure, not a production-grade transformer.
-    enc_flat = model_data["weights"]["encoder"]   # 640 × 64 = 40960 values
-    hid_flat = model_data["weights"]["hidden"]    # 64 × 64 = 4096 values
-    out_flat = model_data["weights"]["output"]    # 64 × 8 = 512 values
+    enc_flat = model_data["weights"]["encoder"]
+    hid_flat = model_data["weights"]["hidden"]
+    out_flat = model_data["weights"]["output"]
 
-    input_dim  = model_data["architecture"]["input_dim"]    # 640
-    hidden_dim = model_data["architecture"]["hidden_dim"]   # 64
-    output_dim = model_data["architecture"]["output_dim"]   # 8
+    input_dim  = model_data["architecture"]["input_dim"]
+    hidden_dim = model_data["architecture"]["hidden_dim"]
+    output_dim = model_data["architecture"]["output_dim"]
 
     def _matmul_int(x: list[int], W_flat: list[int],
                     rows: int, cols: int) -> list[int]:
-        """Minimal integer matrix multiply: x (rows,) @ W (rows x cols) -> (cols,)."""
         out = [0] * cols
         for c in range(cols):
             acc = 0
             for r in range(rows):
                 acc += x[r] * W_flat[r * cols + c]
-            # Requantize to INT8 range to prevent overflow accumulation
             out[c] = max(-128, min(127, acc >> 7))
         return out
 
@@ -281,26 +345,20 @@ def benchmark(
             h1 = _relu(_matmul_int(feat,  enc_flat, input_dim,  hidden_dim))
             h2 = _relu(_matmul_int(h1,   hid_flat, hidden_dim, hidden_dim))
             logits = _matmul_int(h2, out_flat, hidden_dim, output_dim)
-            # Predict class with highest logit (presence/count head uses first 4)
             pred = max(range(4), key=lambda i: logits[i])
             labels_pred.append(pred)
 
-    # ------------------------------------------------------------------ #
-    #  Metrics: accuracy + per-class F1                                   #
-    # ------------------------------------------------------------------ #
     class_names = {0: "empty", 1: "standing", 2: "sitting", 3: "fall"}
     n_classes = 4
 
     correct = sum(t == p for t, p in zip(labels_true, labels_pred))
     accuracy = correct / n_samples if n_samples else 0.0
 
-    # Confusion matrix
     cm = [[0] * n_classes for _ in range(n_classes)]
     for t, p in zip(labels_true, labels_pred):
         if 0 <= t < n_classes and 0 <= p < n_classes:
             cm[t][p] += 1
 
-    # Per-class precision, recall, F1
     f1_scores: dict[int, float] = {}
     for c in range(n_classes):
         tp = cm[c][c]
@@ -315,9 +373,6 @@ def benchmark(
 
     macro_f1 = sum(f1_scores.values()) / n_classes
 
-    # ------------------------------------------------------------------ #
-    #  Results table                                                      #
-    # ------------------------------------------------------------------ #
     from rich.table import Table
 
     console.print("\n")
@@ -352,7 +407,6 @@ def benchmark(
         )
     console.print(tbl)
 
-    # Confusion matrix
     cm_tbl = Table(title="Confusion Matrix (row=true, col=pred)",
                    show_header=True, header_style="bold")
     cm_tbl.add_column("true \\ pred")

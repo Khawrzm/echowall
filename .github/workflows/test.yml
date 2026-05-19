@@ -33,4 +33,4 @@ jobs:
         run: pytest tests/ -v
 
       - name: Smoke test (simulation)
-        run: echowall run --simulate --scene apartment_2br
+        run: echowall run --simulate --scene living_room
