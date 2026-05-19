@@ -1,0 +1,181 @@
+name: Generate Synthetic CSI Dataset (HITL)
+
+# Trigger manually from GitHub Actions UI (mobile-friendly)
+# Never auto-runs on push to main — a human always initiates.
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'NumPy random seed (default: 42 for deterministic replay)'
+        required: false
+        default: '42'
+      n_samples_per_class:
+        description: 'Samples per class (4 classes → total rows = 4x this value)'
+        required: false
+        default: '50'
+
+jobs:
+  generate-and-pr:
+    name: Generate dataset and open PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # push the data branch
+      pull-requests: write  # open the PR
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install numpy
+        run: pip install numpy==1.26.4 --quiet
+
+      - name: Generate deterministic synthetic CSI dataset
+        env:
+          SEED: ${{ github.event.inputs.seed }}
+          N_PER_CLASS: ${{ github.event.inputs.n_samples_per_class }}
+        run: |
+          python - <<'PYEOF'
+          import numpy as np
+          import csv
+          import hashlib
+          import os
+          import pathlib
+
+          SEED        = int(os.environ.get("SEED", 42))
+          N_PER_CLASS = int(os.environ.get("N_PER_CLASS", 50))
+          N_SUBCARRIERS  = 64
+          N_TIME_FRAMES  = 10
+          N_FEATURES     = N_SUBCARRIERS * N_TIME_FRAMES  # 640
+
+          rng = np.random.default_rng(seed=SEED)
+
+          # 4 classes, N_PER_CLASS samples each
+          # Labels: 0=empty  1=standing  2=sitting  3=fall
+          labels = np.repeat([0, 1, 2, 3], N_PER_CLASS)
+
+          rows = []
+          for label in labels:
+              base = rng.standard_normal(N_FEATURES).astype(np.float32)
+
+              if label == 0:   # empty — low energy, flat spectrum
+                  csi = base * 0.3
+              elif label == 1: # standing — lower subcarriers elevated (physics: torso reflection)
+                  csi = base * 0.8
+                  csi[:20 * N_TIME_FRAMES] *= 2.5
+              elif label == 2: # sitting — mid-band elevated (physics: seated torso)
+                  csi = base * 0.7
+                  csi[20 * N_TIME_FRAMES:40 * N_TIME_FRAMES] *= 1.8
+              else:            # fall — large transient spike then rapid decay
+                  csi = base * 1.2
+                  csi[:5  * N_TIME_FRAMES] *= 4.0
+                  csi[5   * N_TIME_FRAMES:] *= 0.4
+
+              # Quantize to INT8 [-128, 127] — matches ESP32-S3 TCN input format
+              scale = max(abs(csi.max()), abs(csi.min())) / 127.0 or 1.0
+              csi_int8 = np.clip(csi / scale, -128, 127).astype(np.int8)
+              rows.append([int(label)] + csi_int8.tolist())
+
+          # Write CSV
+          out_path = pathlib.Path("tests/data/sample_csi_fall.csv")
+          out_path.parent.mkdir(parents=True, exist_ok=True)
+
+          header = ["label"] + [f"f{i}" for i in range(N_FEATURES)]
+          with out_path.open("w", newline="") as fh:
+              writer = csv.writer(fh)
+              writer.writerow(header)
+              writer.writerows(rows)
+
+          # Log metadata
+          sha256 = hashlib.sha256(out_path.read_bytes()).hexdigest()
+          total  = len(rows)
+          print(f"Dataset written : {out_path}")
+          print(f"Rows            : {total}  ({N_PER_CLASS} per class x 4 classes)")
+          print(f"Features        : {N_FEATURES}  ({N_SUBCARRIERS} subcarriers x {N_TIME_FRAMES} frames)")
+          print(f"Seed            : {SEED}")
+          print(f"SHA-256         : {sha256}")
+          print(f"Size            : {out_path.stat().st_size:,} bytes")
+
+          # Write sidecar metadata for offline integrity checks
+          import json
+          meta = {
+              "dataset":    "sample_csi_fall",
+              "seed":       SEED,
+              "rows":       total,
+              "features":   N_FEATURES,
+              "classes":    {"0": "empty", "1": "standing", "2": "sitting", "3": "fall"},
+              "quantization": "INT8",
+              "sha256":     sha256,
+              "generated_by": "generate-dataset.yml",
+              "note": "Deterministic synthetic simulation data. NOT real RF measurements.",
+          }
+          meta_path = out_path.with_suffix(".meta.json")
+          meta_path.write_text(json.dumps(meta, indent=2))
+          print(f"Sidecar meta    : {meta_path}")
+          PYEOF
+
+      - name: Create data branch and commit
+        id: commit
+        run: |
+          BRANCH="data/synthetic-csi-seed-${{ github.event.inputs.seed || '42' }}"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "${BRANCH}"
+          git add tests/data/sample_csi_fall.csv tests/data/sample_csi_fall.meta.json
+          git commit -m "chore(data): auto-generate full synthetic CSI dataset via CI
+
+          - Seed        : ${{ github.event.inputs.seed || '42' }}
+          - N per class : ${{ github.event.inputs.n_samples_per_class || '50' }}
+          - Total rows  : $(python -c "print(4 * int('${{ github.event.inputs.n_samples_per_class || 50 }}'))")
+          - Generated by: generate-dataset.yml (workflow_dispatch)
+
+          Deterministic synthetic data — NOT real RF measurements.
+          Run \`echowall benchmark\` to validate against this dataset."
+
+          git push origin "${BRANCH}"
+
+      - name: Open Pull Request against main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.commit.outputs.branch }}"
+          gh pr create \
+            --base main \
+            --head "${BRANCH}" \
+            --title "chore(data): full synthetic CSI dataset (seed=${{ github.event.inputs.seed || '42' }})" \
+            --body "## Synthetic CSI Dataset — HITL Merge Required
+
+          This PR was opened automatically by the **generate-dataset.yml** workflow.
+          A human must review and merge it — the workflow cannot push to \`main\` directly.
+
+          ### Dataset summary
+          | Property | Value |
+          |---|---|
+          | Seed | \`${{ github.event.inputs.seed || '42' }}\` |
+          | Samples per class | ${{ github.event.inputs.n_samples_per_class || '50' }} |
+          | Total rows | $(python -c \"print(4 * int('${{ github.event.inputs.n_samples_per_class || 50 }}'))\") |
+          | Features | 640 (64 subcarriers × 10 frames) |
+          | Quantization | INT8 |
+          | Classes | 0=empty, 1=standing, 2=sitting, 3=fall |
+
+          ### Integrity
+          SHA-256 recorded in \`tests/data/sample_csi_fall.meta.json\`.
+          Verified on every \`echowall benchmark\` run via \`model_loader.py\` pattern.
+
+          ### Radical Honesty
+          > ⚠️ This is **deterministic synthetic simulation data** (physics-informed,
+          > numpy seed=42). It is NOT real RF measurements from an ESP32-S3.
+          > Run \`echowall benchmark --real\` with hardware-captured CSI for
+          > production accuracy metrics.
+
+          ---
+          _Merge this PR from your mobile browser to maintain the sovereign HITL air-gap._"
