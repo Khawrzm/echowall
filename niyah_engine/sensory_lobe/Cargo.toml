@@ -1,0 +1,22 @@
+[package]
+name = "sensory_lobe"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+heapless = { workspace = true }
+bitflags = { workspace = true }
+phalanx_gate = { path = "../phalanx_gate" }
+
+# unsafe required only in dma.rs for physical address manipulation
+# Every unsafe block carries a SAFETY comment.
+[features]
+default = []
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

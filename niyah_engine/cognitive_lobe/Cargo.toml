@@ -1,0 +1,26 @@
+[package]
+name = "cognitive_lobe"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+heapless = { workspace = true }
+bitflags = { workspace = true }
+phalanx_gate = { path = "../phalanx_gate" }
+sensory_lobe = { path = "../sensory_lobe" }
+
+[features]
+default = []
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+# Note: cognitive_lobe uses FFI to the C11 Casper Engine.
+# Build requires: libcasper.a compiled from casper_engine/ with -std=c11 -O2
+# Link with: cargo:rustc-link-lib=static=casper
+# See casper_engine/README.md for build instructions.
