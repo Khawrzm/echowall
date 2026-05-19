@@ -3,6 +3,7 @@
 > **See through walls with the Wi-Fi router you already own.**
 > No cameras. No new hardware. No cloud. Runs on a Raspberry Pi.
 
+[![Tests](https://github.com/Khawrzm/echowall/actions/workflows/test.yml/badge.svg)](https://github.com/Khawrzm/echowall/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3_|_RPi_|_Intel_AX-green.svg)](#hardware)
