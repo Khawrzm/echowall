@@ -4,87 +4,136 @@ This is the math behind ECHOWALL. If you just want to install it, see the [READM
 
 ---
 
-## 1. Channel State Information (CSI), in one paragraph
+## 1. Channel State Information (CSI)
 
-Every 802.11 OFDM packet is a comb of subcarriers. The receiver estimates the complex channel response `H(f, t)` on each subcarrier to equalize the signal. That estimate — normally discarded after equalization — *is* the channel state. For a bcm43455 it is a 256-tap complex vector; for ESP32-S3 it is 52 (HT20) or 117 (HT40) taps. We sample it at 50–100 Hz.
+Every 802.11 OFDM packet is a comb of subcarriers. The receiver estimates
+the complex channel response `H(f, t)` on each subcarrier to equalize the
+signal. That estimate — normally discarded after equalization — *is* the
+channel state. For the ESP32-S3 it is 52 (HT20) or 117 (HT40) complex taps,
+sampled at 50–100 Hz via `esp_wifi_set_csi()`.
 
-When a human body moves through the channel, multipath geometry changes. The amplitude `|H|` and phase `∠H` of each subcarrier move in characteristic, low-rank ways. Those motions are what we learn from.
+When a human body moves through the channel, multipath geometry changes.
+The amplitude `|H|` and phase `∠H` of each subcarrier move in characteristic,
+low-rank ways. Those motions are what the TCN learns from.
 
 ---
 
-## 2. Why fuse acoustic FMCW chirps
+## 2. Acoustic FMCW fusion
 
-Wi-Fi CSI is rich but ambiguous: a hand wave near the AP and a body move at 5 m can look similar after the channel collapses.
-
-FMCW (Frequency-Modulated Continuous Wave) chirps over an ultrasonic carrier (18–22 kHz, inaudible to most adults) give us a clean **range** estimate via beat frequency:
+Wi-Fi CSI is rich but spatially ambiguous. FMCW (Frequency-Modulated
+Continuous Wave) chirps over an ultrasonic carrier (18–22 kHz, inaudible)
+give a clean **range** estimate via beat frequency:
 
 ```
-range = (c * f_beat) / (2 * slope)
+range = (c × f_beat) / (2 × slope)
 ```
 
-where `c` is the speed of sound, `f_beat` is the beat frequency at the mic, and `slope` is the chirp slope in Hz/s. Combining the two modalities removes ~70% of the false positives we saw in CSI-only ablations.
+where `c` is the speed of sound, `f_beat` is the beat frequency at the mic,
+and `slope` is the chirp slope in Hz/s. Fusing the two modalities removes
+~70% of false positives seen in CSI-only ablations.
 
 ---
 
 ## 3. Preprocessing
 
-1. **Phase sanitization.** Raw CSI phase is corrupted by CFO, SFO, and PBD. We apply the Sen-Tan-Roy linear-fit correction per-packet.
-2. **Subcarrier selection.** Drop pilot and guard subcarriers. Keep data subcarriers only.
-3. **Amplitude denoise.** Hampel filter (window 7, n_sigmas 3) per subcarrier.
-4. **Doppler tensor.** STFT over 2-second windows; keep ±5 Hz around DC — that is where human motion lives.
-5. **Acoustic range bins.** Cross-correlate received chirp with template; pick top-K peaks.
+1. **Phase sanitization.** Sen-Tan-Roy linear-fit correction per packet.
+2. **Subcarrier selection.** Drop pilot and guard subcarriers.
+3. **Amplitude denoise.** Hampel filter (window 7, σ=3) per subcarrier.
+4. **Doppler tensor.** STFT over 2-second windows; keep ±5 Hz around DC.
+5. **Acoustic range bins.** Cross-correlate received chirp with template.
 
-Output per 200 ms tick: a `[subcarriers, doppler_bins]` tensor + an `[acoustic_bins]` vector.
+Output per 200 ms tick: `[subcarriers × doppler_bins]` tensor + `[acoustic_bins]` vector.
 
 ---
 
-## 4. EchoNet model
+## 4. Inference model — SRAM-optimized INT8 TCN
 
-A 3M-parameter encoder, two heads.
+The v0.2.0 model is an **SRAM-optimized INT8 Temporal Convolutional Network
+(TCN)** — not the previously documented 3M-parameter Transformer. The
+architecture change was driven by the ESP32-S3's 384 KB internal SRAM
+constraint.
+
+### Architecture
 
 ```
-          [CSI tensor]              [Acoustic vector]
-               |                            |
-         Conv1D x 3                   Linear x 2
-               |                            |
-               +-------- concat ------------+
-                            |
-                    4-layer Transformer
-                       (dim=128, heads=4)
-                            |
-          +-----------------+------------------+
-          |                                    |
-   Presence/Count head                  Posture/Vitals head
-      (softmax)                            (regression)
+  [CSI tensor 640-dim]     [Acoustic vector]
+         │                        │
+   TCN block × 3             Linear × 2
+   (dilated Conv1D,               │
+    dilation = 1,2,4)             │
+         │                        │
+         └──────── concat ────────┘
+                       │
+              Linear (128 → 64)
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+  Presence/Count head        Posture/Vitals head
+    (INT8 softmax)             (INT8 regression)
 ```
 
-Trained with focal loss on presence/count and Huber loss on regression heads. We use 80% labeled real data + 20% sim-2-real augmentation.
+### Memory footprint (INT8)
 
-Inference: ~14 ms on a Pi 4, ~6 ms on Apple M2, ~85 ms on ESP32-S3 (quantized int8).
+| Layer | Weights | Bytes |
+|---|---|---|
+| TCN encoder (640→64) | 640 × 64 | 40,960 |
+| Hidden (64→64) | 64 × 64 | 4,096 |
+| Output (64→8) | 64 × 8 | 512 |
+| Biases (INT32) | (64+64+8) × 4 | 544 |
+| **Total** | | **~46 KB** |
 
----
-
-## 5. Federated learning
-
-We ship a personal model out of the box. To improve, nodes optionally participate in federated rounds:
-
-- Each node trains a local LoRA adapter on its own data.
-- It uploads only the adapter delta (~200 KB), DP-clipped at `ε=2`.
-- The coordinator averages and ships back a new global adapter.
-
-No raw signals leave the node. We are deliberately conservative on DP because passive radar data is sensitive by nature.
+Inference on ESP32-S3 (Xtensa LX7 @ 240 MHz): **~85 ms** (11.7 Hz).
+No float on the inference hot path — all operations in INT8/INT16.
 
 ---
 
-## 6. Known limitations (read this before opening an issue)
+## 5. Federated Learning — Zero-Telemetry FedAvg via ESP-NOW
 
-- **Cross-environment generalization is hard.** A model trained in your living room loses ~20% F1 in a different floor plan. v1.0 will address with domain-adaptive heads.
-- **Through-wall vitals are noisy.** Single-AP through-wall BPM is honest-to-god research, not a product. Treat the numbers as confidence intervals, not measurements.
-- **2.4 GHz vs 5 GHz tradeoffs.** 2.4 GHz penetrates better but has more interference. We default to 5 GHz indoors.
-- **Crowd > 6 people** breaks the count head. The training distribution is sparse there.
+Multiple ESP32-S3 nodes improve the shared model without transmitting raw
+CSI or inference results. Only masked weight deltas leave each node.
+
+### Protocol
+
+1. **Local training:** Each node runs SGD on its own CSI data, producing
+   updated weights `w_new`.
+2. **Delta computation:** `Δw = w_new − w_base` (INT8, wraps intentionally).
+3. **Privacy masking:** `Δw_masked = Δw XOR LFSR(seed)` where
+   `seed = MAC[4:5] XOR round_id` — a unique stream per node per round.
+4. **Chunked ESP-NOW broadcast:** `Δw_masked` is split into 208 chunks of
+   220 bytes each and broadcast at MAC layer (no router, no IP stack).
+   Inter-frame gap: 10 ms → ~2.1 s total per round.
+5. **FedAvg aggregation (receiving nodes):**
+
+```
+w_global[i] = clamp8( w_base[i] + (1/N) × Σ_j unmask(Δw_j[i]) )
+```
+
+INT16 accumulation prevents overflow: max sum across 4 peers =
+4 × 127 = 508, which fits in INT16 before the final divide-and-clamp.
+
+### What is transmitted
+
+| Data | Transmitted? |
+|---|---|
+| Raw CSI subcarrier values | ❌ Never |
+| Acoustic chirp recordings | ❌ Never |
+| Inference outputs (presence/posture) | ❌ Never |
+| Masked INT8 weight deltas (Δw) | ✅ Yes — to LAN peers only via ESP-NOW |
 
 ---
 
-## 7. Want to go deeper?
+## 6. Known limitations
 
-The references that shaped this design are listed in [REFERENCES.md](REFERENCES.md). Start with Halperin 2011 and Schulz nexmon_csi.
+- **Cross-environment generalization.** A model trained in one room loses
+  ~20% F1 in a different floor plan. Use `echowall calibrate` on deployment.
+- **Through-wall vitals.** Single-AP BPM through concrete is research-grade.
+  Do not treat as a medical measurement.
+- **Fall detection is 81% accurate (Beta).** Not certified for life-safety
+  emergency use. See README disclaimer.
+- **Crowd > 4 people** degrades the count head significantly.
+
+---
+
+## 7. References
+
+See [REFERENCES.md](REFERENCES.md). Start with Halperin 2011 and Schulz nexmon_csi.

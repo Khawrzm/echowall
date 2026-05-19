@@ -1,213 +1,161 @@
 # ECHOWALL
 
-> **See through walls with the Wi-Fi router you already own.**
-> No cameras. No new hardware. No cloud. Runs on a Raspberry Pi.
+> **Bare-metal through-wall presence sensing on a $5 ESP32-S3.**
+> No cameras. No cloud. No router dependency. Physics-enforced privacy.
 
 [![Tests](https://github.com/Khawrzm/echowall/actions/workflows/test.yml/badge.svg)](https://github.com/Khawrzm/echowall/actions/workflows/test.yml)
+[![ESP32 Build](https://github.com/Khawrzm/echowall/actions/workflows/esp32-build.yml/badge.svg)](https://github.com/Khawrzm/echowall/actions/workflows/esp32-build.yml)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
-[![Hardware](https://img.shields.io/badge/hardware-ESP32--S3_|_RPi_|_Intel_AX-green.svg)](#hardware)
-[![Status](https://img.shields.io/badge/status-experimental-orange.svg)](#status)
-[![Discord](https://img.shields.io/badge/chat-discord-7289da.svg)](#community)
+[![Hardware](https://img.shields.io/badge/hardware-ESP32--S3_%245-green.svg)](#hardware)
+[![Status](https://img.shields.io/badge/status-beta-orange.svg)](#status)
+
+> ⚠️ **SAFETY DISCLAIMER:** Fall detection accuracy is **81% (Beta)**.
+> This system is **NOT certified for critical life-safety emergencies**.
+> Do not use as the sole detection mechanism for medical or emergency response.
 
 ---
 
-## TL;DR
+## What ECHOWALL actually is
 
-Wi-Fi signals already pass through your walls. They bounce off your body. They encode your breathing, your posture, your location. Most firmware throws this data away — it's called **Channel State Information (CSI)**.
-
-ECHOWALL harvests it. Fuses it with ultrasonic chirps from any speaker. Runs a transformer on-device. Outputs: `{"presence": true, "count": 2, "posture": "seated", "bpm": 14}`.
-
-No cameras. No new hardware. No cloud. ~$35 of parts (or zero if you have a Raspberry Pi lying around).
+A bare-metal firmware for the **ESP32-S3 microcontroller (~$5)** that extracts
+Channel State Information (CSI) from 802.11 Wi-Fi frames, fuses it with
+ultrasonic FMCW chirps, runs an **SRAM-optimized INT8 Temporal Convolutional
+Network (TCN)** fully on-device, and outputs structured presence/posture events
+over serial — with zero cloud dependency, zero router reconfiguration, and
+zero data exfiltration by physics.
 
 ```bash
-pip install echowall
-echo "ssid=YOUR_WIFI" > ~/.echowall.conf
-echowall run
+# Flash the firmware
+cd firmware/esp32-s3
+idf.py set-target esp32s3
+idf.py build flash monitor
+# The board is now a passive radar. No router changes. No cloud account.
 ```
 
-Open http://localhost:7000 → you're now a passive radar.
-
 ---
 
-## Why this matters
+## Why not commercial alternatives?
 
-Commercial "through-wall sensing" today is:
-- **Closed-source** (Xandar Kardian, Origin Wireless) — you ship your bedroom data to their cloud.
-- **Expensive** ($2,000+ per unit).
-- **Proprietary hardware** locked to vendors.
+Commercial through-wall sensing (Xandar Kardian, Origin Wireless):
+- **$2,000+ per unit** — hardware you don't own, locked to their ecosystem.
+- **Cloud-mandatory** — your bedroom motion data is uploaded to their servers.
+- **Closed-source** — you cannot audit what is collected or inferred.
 
 ECHOWALL is the opposite:
-- **Apache 2.0**. Audit every line.
-- **Edge-only**. Raw CSI never leaves the device. Ever.
-- **Hardware you already own** — your router, your phone, a $5 ESP32.
-
-This is what privacy-preserving ambient sensing should look like.
+- **$5 hardware** (ESP32-S3). One chip. No subscription.
+- **Zero telemetry** — `grep -r 'upload_to_cloud\|requests.post\|http' echowall/` returns nothing in the sensing stack.
+- **Apache 2.0** — every line is auditable.
 
 ---
 
-## What it actually does (today)
+## Honest accuracy numbers (v0.2.0 Beta)
 
-| Capability | Status | Accuracy |
-|---|---|---|
-| Human presence (through 1 drywall) | ✅ Stable | ~94% F1 |
-| Occupancy count (1–4 people) | ✅ Stable | ~87% |
-| Posture (stand/sit/fall) | 🟡 Beta | ~81% |
-| Breathing rate (line of sight) | 🟡 Beta | ±2 bpm |
-| Breathing rate (through wall) | 🔬 Research | ±5 bpm |
-| Heart rate (micro-Doppler) | 🔬 Research | ±8 bpm |
-| 2.5D spatial mapping | 🔬 Research | qualitative |
-| Gesture recognition | ❌ Not yet | — |
+| Capability | Status | Accuracy | Notes |
+|---|---|---|---|
+| Human presence (through 1 drywall) | ✅ Stable | ~94% F1 | ESP32-S3, 60 m² apartment |
+| Occupancy count (1–4 people) | ✅ Stable | ~87% | |
+| **Posture / Fall detection** | 🟡 **Beta** | **~81%** | ⚠️ NOT for life-safety use |
+| Breathing rate (line of sight) | 🟡 Beta | ±2 bpm | |
+| Breathing rate (through wall) | 🔬 Research | ±5 bpm | Not a medical device |
+| Heart rate (micro-Doppler) | 🔬 Research | ±8 bpm | Not a medical device |
 
-*Numbers from internal benchmarks on a 60 m² apartment, single drywall, ESP32-S3 + Pi 4. Reproduce with `echowall benchmark`.*
+*Reproduce: `echowall benchmark` — runs fully offline on recorded CSI replay.*
 
 ---
 
 ## How it works
 
 ```
-  Wi-Fi router ))))     ((((  bounces off you  ))))     (((( ESP32-S3 / Pi NIC
-       |                                                        |
-       +------------> CSI tensor (subcarriers x time) -----------+
-                                  |
-                Phone speaker ))) ultrasonic chirp ((( Mic array
-                                  |
-                          [ Fusion + Denoise ]
-                                  |
-                         [ EchoNet transformer ]
-                                  |
-                  presence / count / posture / vitals
-                                  |
-                          REST + MQTT + WebSocket
+  ESP32-S3 (STA mode)  ←── 802.11 frames ───  any AP in range
+       │
+       ├─ CSI extraction (52–117 subcarriers, 50–100 Hz)
+       ├─ Ultrasonic FMCW chirp (I2S DAC → 18–22 kHz → mic)
+       ├─ Galois LFSR adversarial jitter (Privacy-by-Physics)
+       └─ INT8 TCN inference → {presence, count, posture, confidence}
+                                      │
+                              Serial / REST / MQTT
+                         (semantic output only — no raw CSI)
 ```
-
-Three honest sentences about the science:
-1. CSI is a per-subcarrier complex number describing how the channel deformed your packet. Humans deform it in characteristic ways.
-2. Acoustic FMCW chirps give us a second, orthogonal range estimate that disambiguates multipath.
-3. A small transformer (~3M params) learns the joint embedding. It runs at 12 Hz on a Pi 4.
-
-If you want the math, read [`docs/THEORY.md`](docs/THEORY.md). If you want it to work, just `pip install`.
 
 ---
 
-## Quick start
+## Privacy-by-Physics protocol
 
-### Option A — Raspberry Pi 4 (recommended, ~15 min)
+Three hard guarantees — not policies, not promises:
 
-```bash
-git clone https://github.com/Khawrzm/echowall
-cd echowall && pip install -e ".[rpi]"
-sudo echowall setup-nexmon          # patches the Pi's Wi-Fi firmware for CSI
-echowall run
-```
+1. **On-device processing only.** Raw CSI is processed and discarded in the
+   same FreeRTOS task iteration. There is no `upload_to_cloud()` function
+   anywhere in this repository. Verify: `grep -r 'upload_to_cloud' .`
 
-### Option B — ESP32-S3 ($5 board, no host needed)
+2. **Adversarial RF jitter.** A hardware-seeded Galois LFSR injects
+   deterministic perturbations into outgoing CSI streams before any
+   transmission. A passive eavesdropper receives noise; the local model
+   (which holds the seed) receives signal. This is **Privacy-by-Physics** —
+   the privacy guarantee is enforced by the mathematics of the LFSR, not by
+   a server-side policy that can be changed. Spec: [`docs/PRIVACY.md`](docs/PRIVACY.md).
 
-```bash
-cd firmware/esp32-s3
-idf.py build flash monitor
-```
-
-The board hosts its own dashboard at `http://echowall.local`.
-
-### Option C — Pure simulation (no hardware)
-
-```bash
-pip install "echowall[sim]"
-echowall run --simulate --scene apartment_2br
-```
-
-Great for hacking on the model without burning your thumbs on a soldering iron.
-
----
-
-## Privacy is a hard guarantee, not a promise
-
-Three mechanisms, layered:
-
-1. **On-device only.** Raw CSI is processed and discarded in the same loop iteration. There is no `upload_to_cloud()` function in this repo. Grep it.
-2. **Adversarial jitter.** A hardware-seeded random perturbation is injected into outgoing CSI streams. Eavesdroppers see noise; the local model (which knows the seed) sees signal. We call this **Privacy-by-Physics**. Spec: [`docs/PRIVACY.md`](docs/PRIVACY.md).
-3. **Semantic output only.** The API returns `{"presence": true}`. It does not return waveforms, spectrograms, or anything reconstructible.
-
-If you find a way to exfiltrate raw signal from a running ECHOWALL node, open an issue. We will pay a bounty.
+3. **Semantic output only.** The API surface returns
+   `{"presence": true, "count": 2, "posture": "seated"}`. It never returns
+   raw waveforms, subcarrier amplitudes, or any signal reconstructible into
+   a meaningful representation of the environment.
 
 ---
 
 ## Hardware
 
-| Platform | CSI Source | Acoustic | Notes |
-|---|---|---|---|
-| ESP32-S3 | Native (`esp_wifi_set_csi`) | I2S DAC | $5, standalone, recommended for new builds |
-| Raspberry Pi 4 / CM4 | `nexmon_csi` (bcm43455) | 3.5mm / USB | Best accuracy, needs firmware patch |
-| Intel AX200 / AX210 | `iwlwifi` CSI extractor | system audio | Linux laptops, beta |
-| Asus RT-AC86U / similar | OpenWrt + nexmon | external | Whole-home coverage |
-| Android (rooted) | ADB CSI bridge | native speaker | Mobile demos, beta |
+The **only required hardware** is an ESP32-S3 development board (~$5).
+No router reconfiguration. No Raspberry Pi required for the core sensing loop.
 
-A BOM and wiring diagrams live in [`docs/HARDWARE.md`](docs/HARDWARE.md).
-
----
-
-## Use cases people are actually building
-
-- **Elderly fall detection** without cameras in the bathroom.
-- **Smart HVAC** that turns off when rooms are empty (saw a 22% energy drop in one tester's home).
-- **Intrusion detection** for off-grid cabins where cameras are useless.
-- **Sleep & breathing monitoring** without wearables.
-- **Crowd counting** in mosques, classrooms, offices — privacy-respectfully.
-- **Search & rescue** prototypes for collapsed buildings (early research).
-
-If you build something cool, PR it to [`docs/SHOWCASE.md`](docs/SHOWCASE.md).
+| Platform | Role | Notes |
+|---|---|---|
+| **ESP32-S3** | Primary — standalone sensing + inference | $5, recommended |
+| Raspberry Pi 4 / CM4 | Optional host for Python dashboard | Best accuracy with nexmon_csi |
+| Intel AX200/AX210 | Optional — Linux laptop CSI source | Beta |
 
 ---
 
-## Status & roadmap
+## Federated Learning mesh (v0.2.0)
 
-ECHOWALL is **v0.1.0 — experimental**. The presence detector is solid. The vital signs work is honest research. Treat it accordingly.
+Multiple ESP32-S3 nodes can now exchange **masked INT8 weight deltas** via
+**ESP-NOW** (MAC-layer P2P, no router required) and perform on-device
+**FedAvg aggregation**. Raw CSI never leaves any node. Only `Δw` (weight
+deltas), masked with a per-round Galois LFSR stream, are transmitted.
 
-Next 90 days:
-- [ ] Home Assistant integration (in review)
-- [ ] Federated learning across nodes (`federated/` skeleton landed)
-- [ ] Pretrained EchoNet checkpoint release
-- [ ] iOS companion app (sonar-only, no jailbreak)
-- [ ] Reproducible benchmarks on a public dataset
-
-Full list: [`ROADMAP.md`](ROADMAP.md).
+See [`firmware/esp32-s3/components/fl_mesh/`](firmware/esp32-s3/components/fl_mesh/)
+and [`docs/THEORY.md`](docs/THEORY.md).
 
 ---
 
-## Built on the shoulders of
+## Quick start
 
-ECHOWALL would not exist without prior work, especially:
-- Halperin et al., *Tool Release: Gathering 802.11n Traces with Channel State Information* (2011)
-- Schulz et al., **nexmon_csi** (TU Darmstadt)
-- Hernandez & Bulut, *WiFi Sensing on the Edge* (2023 survey)
-- Wang et al., *RF-Pose* (MIT CSAIL)
+```bash
+git clone https://github.com/Khawrzm/echowall
+cd firmware/esp32-s3
+idf.py set-target esp32s3
+idf.py build flash monitor
+```
 
-Full citations in [`docs/REFERENCES.md`](docs/REFERENCES.md).
-
----
-
-## Contributing
-
-We want hardware ports, better models, replication studies, and translations. Especially: **Arabic, Spanish, Mandarin, Hindi** docs.
-
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md). Be kind. Cite your sources. Don't break privacy.
+For the Python analytics host:
+```bash
+pip install echowall
+echowall run
+```
 
 ---
 
-## Community
+## Status
 
-- **Discussions:** GitHub Discussions tab
-- **Issues:** bugs & feature requests
-- **Discord:** (coming soon)
-- **Email:** cartier403c@gmail.com
-- 
+ECHOWALL is **v0.2.0 — Beta**. The ESP32-S3 bare-metal stack is the primary
+platform. The Python host is a companion analytics layer, not a dependency.
+
 ---
 
 ## License
 
-Apache 2.0. Use it commercially, fork it, ship it. Just don't weaponize it against people. See [`LICENSE`](LICENSE).
+Apache 2.0. Audit it. Fork it. Ship it. Don't weaponize it. See [`LICENSE`](LICENSE).
 
 ---
 
-<sub>Built by <a href="https://github.com/Khawrzm">Sulaiman Alshammari</a> in Riyadh. The router in your living room is already a radar — ECHOWALL just lets you read what it sees.</sub>
+<sub>Built by <a href="https://github.com/Khawrzm">Sulaiman Alshammari</a> in Riyadh.
+The router in your living room is already a radar — ECHOWALL just lets you read what it sees,
+on your own hardware, with your own keys, under your own roof.</sub>

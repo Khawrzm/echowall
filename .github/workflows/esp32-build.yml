@@ -1,0 +1,50 @@
+name: ESP32-S3 Firmware Build
+
+on:
+  push:
+    branches: [ "main", "fix/**", "feat/**" ]
+    paths:
+      - "firmware/esp32-s3/**"
+      - ".github/workflows/esp32-build.yml"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "firmware/esp32-s3/**"
+      - ".github/workflows/esp32-build.yml"
+
+jobs:
+  build-firmware:
+    name: Build ESP-IDF Firmware (ESP32-S3)
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set ESP-IDF target to esp32s3
+        working-directory: firmware/esp32-s3
+        shell: bash
+        run: |
+          . /opt/esp/idf/export.sh
+          idf.py set-target esp32s3
+
+      - name: Build firmware
+        working-directory: firmware/esp32-s3
+        shell: bash
+        run: |
+          . /opt/esp/idf/export.sh
+          idf.py build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: echowall-esp32s3-firmware
+          path: |
+            firmware/esp32-s3/build/*.bin
+            firmware/esp32-s3/build/*.elf
+            firmware/esp32-s3/build/*.map
+          retention-days: 14
