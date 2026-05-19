@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src * data:;" />
+  <title>CometX</title>
+  <link rel="stylesheet" href="agent-beam.css" />
+</head>
+<body>
+
+<div id="shell">
+  <div id="window-controls">
+    <button class="wc-btn" id="btn-close"   onclick="cometx.windowControl('close')"></button>
+    <button class="wc-btn" id="btn-min"     onclick="cometx.windowControl('minimize')"></button>
+    <button class="wc-btn" id="btn-max"     onclick="cometx.windowControl('maximize')"></button>
+  </div>
+
+  <div id="tab-bar">
+    <div id="tabs-container"></div>
+    <button id="btn-new-tab" title="New Tab" onclick="cometx.newTab()">＋</button>
+  </div>
+
+  <div id="nav-bar">
+    <button id="btn-back"    title="Back"    onclick="cometx.back()">&#8249;</button>
+    <button id="btn-forward" title="Forward" onclick="cometx.forward()">&#8250;</button>
+    <button id="btn-reload"  title="Reload"  onclick="cometx.reload()">&#8635;</button>
+
+    <div id="address-wrap">
+      <span id="security-icon">&#128274;</span>
+      <input id="address-bar" type="text" spellcheck="false"
+             placeholder="Search or enter address"
+             onkeydown="if(event.key==='Enter') cometx.navigate(this.value)" />
+    </div>
+
+    <div id="agent-beam-wrap">
+      <div id="agent-beam" class="beam-idle" title="Agent Status"></div>
+    </div>
+    <button id="btn-sidecar" title="Toggle Agent Panel" onclick="cometx.toggleSidecar()">&#9889;</button>
+  </div>
+</div>
+
+<div id="sidecar" class="sidecar-closed">
+  <div id="sidecar-header">
+    <span id="llm-badge">&#11041; Local LLM</span>
+    <span id="llm-model-name">&mdash;</span>
+    <button id="btn-close-sidecar" onclick="cometx.toggleSidecar()">&#10005;</button>
+  </div>
+
+  <div id="chat-log"></div>
+
+  <div id="action-log-wrap">
+    <div id="action-log-title">Agent Actions</div>
+    <div id="action-log"></div>
+  </div>
+
+  <div id="prompt-area">
+    <textarea id="prompt-input" rows="3"
+              placeholder="Ask agent to do something on this page&hellip;"
+              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();cometx.sendPrompt()}"></textarea>
+    <button id="btn-send" onclick="cometx.sendPrompt()">&#9654;</button>
+  </div>
+</div>
+
+<script src="shell.js"></script>
+</body>
+</html>
