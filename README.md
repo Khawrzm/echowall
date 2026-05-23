@@ -3,7 +3,7 @@
 > *Sovereign Infrastructure as Compiled Physics*
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-black?style=flat-square)](LICENSE)
-[![Status: v6.0-draft](https://img.shields.io/badge/status-v6.0__draft-yellow?style=flat-square)](https://github.com/Khawrzm/khawrizm/releases)
+[![Status: v6.0-draft](https://img.shields.io/badge/status-v6.0__draft-yellow?style=flat-square)](https://github.com/Khawrzm/echowall/releases)
 [![Blackpaper](https://img.shields.io/badge/docs-Blackpaper__v6.0--draft-blue?style=flat-square)](BLACKPAPER_v6.0-draft.md)
 [![Ecosystem](https://img.shields.io/badge/ecosystem-Sovereign__Infrastructure-green?style=flat-square)](https://github.com/Khawrzm)
 
@@ -77,12 +77,13 @@ Khawrizm is a **sovereign infrastructure stack** that:
 
 |Component               |Purpose                                                          |Status          |Documentation                      |
 |------------------------|-----------------------------------------------------------------|----------------|-----------------------------------|
+|**<apps/>**             |iOS/Android companion apps                                       |Active Dev      |-                                  |
 |**<echowall/>**         |Bare-metal through-wall sensing via Wi-Fi CSI + acoustic chirps  |Beta v0.2.0     |[README](echowall/README.md)       |
 |**<niyah_engine/>**     |Sovereign AI intent processing via Arabic morphological grounding|Alpha v0.1.0    |[README](niyah_engine/README.md)   |
 |**<niyah_executive/>**  |Multi-step planning & constraint checking                        |Alpha v0.1.0    |[README](niyah_executive/README.md)|
 |**<khawrizm_os/>**      |Microkernel + RISC-V emulator (<1000 lines C)                    |Proof-of-Concept|[README](khawrizm_os/README.md)    |
 |**<firmware/>**         |ESP32-S3, RK3588, LimeSDR firmware                               |Active Dev      |[Docs](firmware/README.md)         |
-|**<comext-hybrid/>**    |Local AI browser with MCP tool integration                       |Alpha           |[README](comext-hybrid/README.md)  |
+|**<cometx-hybrid/>**    |Local AI browser with MCP tool integration                       |Alpha           |[README](cometx-hybrid/README.md)  |
 |**<casper_engine/>**    |Behavioral detection & fraud analysis                            |Research        |[Docs](docs/CASPER.md)             |
 |**<custom_components/>**|Hardware-specific drivers & optimizations                        |Active Dev      |-                                  |
 |**<scripts/>**          |Build, test, and deployment automation                           |-               |-                                  |
@@ -127,8 +128,8 @@ Every “convenience” is a leash. Khawrizm breaks this cycle at **Layer 0**:
 ### Clone the Monorepo
 
 ```bash
-git clone https://github.com/Khawrzm/khawrizm
-cd khawrizm
+git clone https://github.com/Khawrzm/echowall
+cd echowall
 ```
 
 ### Install Core Dependencies
@@ -276,12 +277,11 @@ Phase 4 is a horizon, not a promise. See <ROADMAP.md> for details.
 ### How to Contribute
 
 ```bash
-# 1. Fork the repo
-git fork https://github.com/Khawrzm/khawrizm
+# 1. Fork on GitHub: https://github.com/Khawrzm/echowall/fork
 
 # 2. Clone locally
-git clone https://github.com/YOUR_USERNAME/khawrizm
-cd khawrizm
+git clone https://github.com/YOUR_USERNAME/echowall
+cd echowall
 
 # 3. Create feature branch
 git checkout -b feat/add-persian-root-extraction
@@ -385,7 +385,7 @@ You are in violation of the spirit of this license, even if not the letter.
   title        = {Khawrizm: Sovereign Infrastructure as Compiled Physics},
   year         = {2026},
   version      = {6.0-draft},
-  url          = {https://github.com/Khawrzm/khawrizm},
+  url          = {https://github.com/Khawrzm/echowall},
   note         = {Includes ECHOWALL, Niyah Engine, HavenOS, SIDSense}
 }
 ```
@@ -453,11 +453,11 @@ Algorithm:            RETURNS HOME
 
 **For European Deep-Tech Investors**:
 Regulatory arbitrage via engineering. Target CEPT Band 20 regions for TVWS deployment.
-→ [GitHub Issues](https://github.com/Khawrzm/khawrizm/issues) (technical inquiries only)
+→ [GitHub Issues](https://github.com/Khawrzm/echowall/issues) (technical inquiries only)
 
 **For Systems Engineers**:
 All repos open-source. Reproduce our claims. Stress-test our math.
-→ [Discussions](https://github.com/Khawrzm/khawrizm/discussions)
+→ [Discussions](https://github.com/Khawrzm/echowall/discussions)
 
 **For Philosophers of Technology**:
 This is sovereignty, not convenience.
