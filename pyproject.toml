@@ -34,7 +34,7 @@ dependencies = [
 [project.optional-dependencies]
 rpi = ["RPi.GPIO>=0.7.1", "picamera2>=0.3"]
 sim = ["matplotlib>=3.8", "plotly>=5.18"]
-dev = ["pytest>=8", "ruff>=0.3", "mypy>=2.1.0"]
+dev = ["pytest>=9.0.3", "ruff>=0.3", "mypy>=2.1.0"]
 
 [project.scripts]
 echowall = "echowall.cli:app"
