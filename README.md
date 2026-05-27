@@ -1,14 +1,60 @@
-# 🏴‍☠️ KHAWRIZM
+# 🏴‍☠️ ECHOWALL - Privacy by Physics
 
-> *Sovereign Infrastructure as Compiled Physics*
+> *You cannot hack physics. You cannot subpoena a signal that never leaves the room.*
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-black?style=flat-square)](LICENSE)
-[![Status: v6.0-draft](https://img.shields.io/badge/status-v6.0__draft-yellow?style=flat-square)](https://github.com/Khawrzm/echowall/releases)
-[![Blackpaper](https://img.shields.io/badge/docs-Blackpaper__v6.0--draft-blue?style=flat-square)](BLACKPAPER_v6.0-draft.md)
-[![Ecosystem](https://img.shields.io/badge/ecosystem-Sovereign__Infrastructure-green?style=flat-square)](https://github.com/Khawrzm)
+[![Status: v0.3.0-alpha](https://img.shields.io/badge/status-v0.3.0__alpha-yellow?style=flat-square)](https://github.com/Khawrzm/echowall/releases)
+[![Made in Riyadh](https://img.shields.io/badge/Made_in-Riyadh_🇸🇦-006c35?style=flat-square)](https://khawrizm.com)
+[![Ecosystem](https://img.shields.io/badge/ecosystem-Sovereign__Stack-green?style=flat-square)](https://github.com/Khawrzm)
 
-**A complete sovereign digital infrastructure stack—from bare-metal sensing to stratospheric networks.**
+**Turn your existing Wi-Fi router into a passive edge radar. Detect human presence through walls. Zero cameras. Zero cloud telemetry.**
+
 Built in Riyadh. Compiled from physics. Owned by you.
+
+---
+
+## 📡 Privacy-by-Physics: The Mathematical Core
+
+Unlike centralized AI systems that rely on visual data and cloud telemetry, **EchoWall** relies entirely on the physics of RF signals. We process Wi-Fi Channel State Information (CSI) directly at the edge, using local firmware. Zero cameras. Zero cloud APIs.
+
+### 1. Channel Frequency Response (CFR)
+
+When a Wi-Fi packet travels between a transmitter and EchoWall's ESP32 receiver, it captures the multi-path environment. The CSI matrix $H(f,t)$ at time $t$ for subcarrier $f$ is represented as:
+
+$$
+H(f,t) = \sum_{i=1}^{L} \alpha_i(t) e^{-j 2 \pi f \tau_i(t)} + N(f,t)
+$$
+
+Where:
+- $\alpha_i(t)$ = amplitude attenuation of path $i$
+- $\tau_i(t)$ = time delay of path $i$ (including human body reflections)
+- $N(f,t)$ = ambient noise
+- $L$ = number of multi-paths
+
+### 2. Phase Sanitization (Ring-0 Execution)
+
+Raw CSI phase data is corrupted by Carrier Frequency Offset (CFO) and Sampling Frequency Offset (SFO). Before the local **Niyah Engine** evaluates intent, EchoWall sanitizes the phase deterministically:
+
+$$
+\tilde{\theta}_k = \theta_k - \frac{\theta_n - \theta_1}{n - 1} (k - 1) - \theta_1
+$$
+
+This linear transformation removes hardware-induced phase shifts, leaving only the pure physical disruption caused by human movement (e.g., breathing, walking).
+
+### 3. The Sovereign Anomaly (Doppler Extraction)
+
+By extracting the Doppler shift from sanitized subcarriers across time $t$, EchoWall constructs a real-time **"Human Presence Matrix"** entirely in the RAM of a $5 chip:
+
+$$
+\Delta f_d = \frac{v \cos(\theta)}{\lambda}
+$$
+
+Where:
+- $v$ = velocity of human movement
+- $\theta$ = angle between movement direction and signal path
+- $\lambda$ = wavelength of Wi-Fi signal (2.4 GHz or 5 GHz)
+
+**Conclusion:** The algorithm has returned home. 🏴‍☠️
 
 📖 **[Read the Blackpaper v6.0-draft →](BLACKPAPER_v6.0-draft.md)**
 *(“Sovereign Infrastructure as Compiled Physics”)*
