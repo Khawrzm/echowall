@@ -1,0 +1,24 @@
+[package]
+name = "halluzig"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dragon403 <dragon403@khawrizm.sa>"]
+description = "Topological Data Analysis for LLM hallucination detection via zigzag persistence"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+ndarray = "0.15"
+num-traits = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+default = []
+no_std = []
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
