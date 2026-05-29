@@ -21,6 +21,8 @@
 #![deny(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod ssv;
+
 use heapless::Vec;
 
 // ---------------------------------------------------------------------------
