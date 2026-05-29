@@ -2,6 +2,9 @@
 members = [
     "executive_lobe",
     "phalanx_gate",
+    "halluzig",
+    "cognitive_lobe",
+    "sensory_lobe",
 ]
 resolver = "2"
 
