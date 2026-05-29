@@ -34,6 +34,9 @@
 
 #![no_std]
 #![deny(unsafe_code)]
+
+#[cfg(feature = "gpu")]
+pub mod gpu_accel;
 #![deny(missing_docs)]
 #![warn(clippy::all)]
 

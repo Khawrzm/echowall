@@ -6,6 +6,13 @@ members = [
     "cognitive_lobe",
     "sensory_lobe",
 ]
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "phalanx_bench"
+harness = false
 resolver = "2"
 
 [workspace.package]

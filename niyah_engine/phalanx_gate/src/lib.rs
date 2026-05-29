@@ -22,6 +22,7 @@
 #![warn(clippy::all)]
 
 pub mod ssv;
+pub mod profiler;
 
 use heapless::Vec;
 
