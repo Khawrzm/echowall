@@ -4,6 +4,8 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-black?style=flat-square)](LICENSE)
 [![Status: v0.3.0-alpha](https://img.shields.io/badge/status-v0.3.0__alpha-yellow?style=flat-square)](https://github.com/Khawrzm/echowall/releases)
+[![Rust](https://img.shields.io/badge/Rust-no__std-orange?style=flat-square&logo=rust)](https://www.rust-lang.org)
+[![GPU Accel](https://img.shields.io/badge/GPU-CUDA%2FOpenCL-brightgreen?style=flat-square&logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
 [![Made in Riyadh](https://img.shields.io/badge/Made_in-Riyadh_🇸🇦-006c35?style=flat-square)](https://khawrizm.com)
 [![Ecosystem](https://img.shields.io/badge/ecosystem-Sovereign__Stack-green?style=flat-square)](https://github.com/Khawrzm)
 
