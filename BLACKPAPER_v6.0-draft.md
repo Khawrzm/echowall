@@ -1,11 +1,10 @@
-```markdown
-# Charism One: Sovereign Infrastructure as Compiled Physics
+# Khawrizm One: Sovereign Infrastructure as Compiled Physics
 ## Blackpaper v6.0-draft — Public for Technical Peer Review
 
 > **Status**: Draft v6.0 — Public for Technical Peer Review  
 > Final PDF with cryptographic signature (SHA-256 + GPG) pending audit completion.  
 > *Do not cite as final. Do cite as reproducible architecture.*  
-> Last updated: 2026-05-23 | Author: Sulaiman Alshammari (@Khawrzm)  
+> Last updated: 2026-05-31 | Author: Sulaiman Alshammari (@Khawrzm)  
 > Repo: https://github.com/Khawrzm/khawrizm | EchoWall: https://github.com/Khawrzm/echowall
 
 ---
@@ -49,7 +48,7 @@ Sovereignty begins with a single axiom:
 Free Tier → Data Gravity → Architectural Dependency → Price Monopoly → Hostage Status
 ```
 
-Every "convenience" is a leash. The Charism One stack breaks this cycle at Layer 0:
+Every "convenience" is a leash. The **Khawrizm One** stack breaks this cycle at Layer 0:
 
 | Layer | Centralized Model | Sovereign Alternative |
 |-------|------------------|----------------------|
@@ -254,7 +253,6 @@ edit_set_t* crdt_merge(edit_set_t* a, edit_set_t* b) {
     for (int i = 0; i < b->count; i++) {
         if (!edit_set_contains(result, &b->edits[i])) {
             edit_set_add(result, &b->edits[i]);
-        }
     }
     return result;  // Commutative: merge(a,b) == merge(b,a)
 }
@@ -442,4 +440,3 @@ gpg --verify BLACKPAPER_v6.0-draft.md.sig BLACKPAPER_v6.0-draft.md
 <sub>Built by <a href="https://github.com/Khawrzm">Sulaiman Alshammari</a> in Riyadh.</sub>  
 <sub>The router in your living room is already a radar — ECHOWALL just lets you read what it sees, on your own hardware, with your own keys, under your own roof.</sub>  
 <sub>*"They built cages of convenience and called them clouds. We built keys of mathematics and called them freedom."*</sub>
-```
